@@ -3,3 +3,9 @@ var 100
 #23 = 12
 print #1
 print #23
+
+fn mallcom (awd)
+    var 10;
+    #1 = 1023
+    print #1
+fnend

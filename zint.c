@@ -10,8 +10,6 @@
 #include "zint_defs.h"
 
 #define Z_DEBUG_ENABLED   //Comment this line out if you dont want to do a debug build
-#define check(s, ...)\
-    printf(s, ...);
 
 enum ERROR_CODE
 {
@@ -523,17 +521,14 @@ static int z_interpreter(const String_t ZFILE_PreP)
     count = z_BreakStringInto2DString_ASTOKENS(buff2D, x, y, zfile_tmp.str, ";");
 
 
+
     for (int i = 0; i < count; ++i)
     {
         char * token = strtok(buff2D[i], " \n\t");
 
-
-
         while (token != NULL)
         {
-            if (   token[0] == 'v' 
-                && token[1] == 'a'
-                && token[2] == 'r')
+            if (strcmp(token, "var") == 0)
             {
                 token = strtok(NULL, " \n\t");
                 int VarCount = 1;
@@ -580,6 +575,7 @@ static int z_interpreter(const String_t ZFILE_PreP)
                     printf("%lf\n", z_Variable_accessVariable(VarPos));
                 }
             }
+            
             token = strtok(NULL, " \n\t");
 
         }
@@ -589,14 +585,14 @@ static int z_interpreter(const String_t ZFILE_PreP)
     return 0;
 }
 
-static int z_start(char * filename)
+static int z_start(const char * filename)
 {
-    String_t zfile = z_ReadFromFile(filename);
+    String_t zfile = z_ReadFromFile((char *)filename);
     z_interpreter(zfile);
 
     if (zfile.str == NULL)
     {
-        dieOnCommand("Cannot Open zFile", ERROR_CODE__MISC__FILE_CANT_BE_OPENED, filename);
+        dieOnCommand("Cannot Open zFile", ERROR_CODE__MISC__FILE_CANT_BE_OPENED, (char*)filename);
     }
 
     
@@ -609,6 +605,6 @@ int main(int argc, char const *argv[])
 {
     z_Variable_init();
 
-    z_start("Z.zfile");
+    z_start(argv[1]);
     return 0;
 }
