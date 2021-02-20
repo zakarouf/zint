@@ -1,0 +1,6 @@
+#ifndef ZAKAROUF__Z_INTERPRETOR_H
+#define ZAKAROUF__Z_INTERPRETOR_H
+
+
+
+#endif
