@@ -9,7 +9,7 @@
 
 #include "zint_defs.h"
 
-#define Z_DEBUG_ENABLED   //Comment this line out if you dont want to do a debug build
+//#define Z_DEBUG_ENABLED   //Comment this line out if you dont want to do a debug build
 
 enum ERROR_CODE
 {
@@ -52,9 +52,18 @@ static void dieOnCommand(char *msg, int CODE, char * codesnip)
 // Check if Character is Alphabate
 #define z_isAlpha__MF(c)\
     (z_checkIfInRange__MF((c), 'A', 'Z'+1) == 1 ? z_checkIfInRange__MF((c), 'a', 'z'+1): 0 )
-
 //Macro Funcs END
 
+// See if `Char` exist in a string
+static int z_findCharInStr(char *str, int sz, char c, int fromIndex)
+{
+    for (int i = fromIndex; i < sz; ++i)
+    {
+        if(str[i] == c)
+            return i;
+    }
+    return -1;
+}
 
 
 // Strings
@@ -171,10 +180,9 @@ Keywords_t Keywords = {
 
 // Pre Processor, Processor Lang
 const char PROCESSED_SYMBS[] = {
-      '#' // Global Var
-    , '$' // Local Var
-    , '!' // Global Funcs
-    , '@' // Local Funcs
+      '#' // Var
+    , '$' // Operators
+    , '@' // Funcs
 };
 
 
@@ -263,9 +271,11 @@ typedef struct _Var_t
 #define Z_VARIABLE_BLOCKSIZE_SCOPE 8 // Memory Allocated/Freed At once. FOR SCOPESIZE
 #define Z_VARIABLE_BLOCKSIZE_VSIZE 8 // Memory Allocated/Freed At once. FOR VarSize
 
+typedef double Variable_vartype;
+
 typedef struct _Var_t
 {
-    double *value;
+    Variable_vartype *value;
     long id;
     int size;
     int type;
@@ -292,11 +302,6 @@ typedef struct
 
 }VariableS_t;
 static VariableS_t gVARIABLES;
-
-static int z_Variable_changeVariableValue()
-{
-    return 0;
-}
 
 static int z_Variable_addVariableToScope(int type, int size)
 {
@@ -505,17 +510,117 @@ static String_t z_ReadFromFile(char *file)
             {string, string_size};
 }
 /*
-static double z_operator_asign(char * line)
+static Variable_vartype z_operator_callMathFuncs(char *line, int line_width)
 {
+    int in = 0
+      , it = 0;
+    int type;
+    double Val[2];
 
+    sscanf( &line[1] ,"%d", &type);
+    if ((in = z_findCharInStr(line, line_width, '#', in)) == -1)
+    {
+        char * token = strtok(&line[1], " \n\t");
+        while(token && it < 2)
+        {
+            if (z_isDigit__MF(token[0]))
+            {
+                Val[it] = atof(token);
+                it+=1;
+            }
+        }
+
+        sscanf( &line[in+1],"%lf", &Val[0]);
+        sscanf( &line[in+1],"%lf", &Val[1]);
+
+        //return MathFuncs.Basic[type](Val[0], Val[1]);
+    }
+    
+    sscanf( &line[in+1],"%lf", &Val[0]);
+    
+    in = z_findCharInStr(line, line_width, '#', in+1);
+    sscanf( &line[in+1],"%lf", &Val[1]);
+
+    Val[0] = z_Variable_accessVariable(Val[0]);
+    Val[1] = z_Variable_accessVariable(Val[1]);
+
+    return MathFuncs.Basic[type](Val[0], Val[1]);
 }
 */
+static Variable_vartype z_operator_callMathFuncs(char *line, int line_width)
+{
+    int it = 0;
+    int type;
+    double Val[2];
+
+    sscanf( &line[1] ,"%d", &type);
+
+    char * token = strtok(line, " \t\n");
+
+    while (token != NULL && it < 2)
+    {
+        if (token[0] == '#')
+        {
+            token++;
+            Val[it] = atof(token);
+            Val[it] = z_Variable_accessVariable(Val[it]);
+            it++;
+        }
+        else if (z_isDigit__MF(token[0]))
+        {
+            Val[it] = atof(token);
+            it++;
+        }
+
+        token = strtok(NULL, " \t\n");
+    }
+
+    return MathFuncs.Basic[type](Val[0], Val[1]);
+}
+
+static void z_operator_asign(char * line, int line_width, const int VarPos)
+{
+    int in = z_findCharInStr(line, line_width, '=', 0);
+
+    for (int i = in; i < line_width; ++i)
+    {
+        if (line[i] == '$')
+        {
+            
+
+            double newVal = z_operator_callMathFuncs(&line[i], line_width-i);
+            z_Variable_changeValue(VarPos, newVal);
+
+            //printf("Check:%lf : %c\n", Val1, line[in]);
+            //printf("Check:%lf : %c\n", Val2, line[in]);
+            //printf("NEWVAL: %lf\n", newVal);
+
+            return;
+
+        }
+        else if (z_isDigit__MF(line[i]))
+        {
+            
+            double newVal;
+            sscanf(&line[i], "%lf", &newVal);
+            z_Variable_changeValue(VarPos, newVal);
+            return;
+
+        }
+        
+    }
+
+
+
+}
+
 static int z_interpreter(const String_t ZFILE_PreP)
 {
     String_t zfile_tmp = z__copyString(ZFILE_PreP);
 
-    int x = 100, y = 1000;
+    const int x = 100, y = 1000;
     char ** buff2D = zse_malloc_2D_array_char(x, y);
+    char *tmp_line = malloc(sizeof(char) * x);
 
     int count;
     count = z_BreakStringInto2DString_ASTOKENS(buff2D, x, y, zfile_tmp.str, ";");
@@ -524,7 +629,9 @@ static int z_interpreter(const String_t ZFILE_PreP)
 
     for (int i = 0; i < count; ++i)
     {
+        memcpy(tmp_line, buff2D[i], x);
         char * token = strtok(buff2D[i], " \n\t");
+
 
         while (token != NULL)
         {
@@ -555,7 +662,8 @@ static int z_interpreter(const String_t ZFILE_PreP)
                     token = strtok(NULL, " \n\t");
                     if (token != NULL)
                     {
-                        z_Variable_changeValue(VarPos, atof(token));
+                        z_operator_asign(tmp_line, x,VarPos);
+                        //z_Variable_changeValue(VarPos, atof(token));
                     }
                     else
                     {
@@ -599,6 +707,7 @@ static int z_start(const char * filename)
 
     return 0;
 }
+
 
 
 int main(int argc, char const *argv[])
