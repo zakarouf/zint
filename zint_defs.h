@@ -10,6 +10,6 @@
   \
   "  zint -i[p] [FILENAME] [OPTIONS...]\n\n"\
   "  zint (Z Interpretor) by Zakarouf\n\n"\
-  ZAKAROUF__ZINT_HOSTPAGE"\n"\
+  "  "ZAKAROUF__ZINT_HOSTPAGE"\n\n"\
 
 #endif

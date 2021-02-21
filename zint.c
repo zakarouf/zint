@@ -9,7 +9,8 @@
 
 #include "zint_defs.h"
 
-//#define Z_DEBUG_ENABLED   //Comment this line out if you dont want to do a debug build
+//#define Z_DEBUG_ENABLED     //Comment this line out if you dont want to do a debug build
+#define Z_DEV_TEST_ENABLED   //Instialize Developer Test kit
 
 enum ERROR_CODE
 {
@@ -181,8 +182,9 @@ Keywords_t Keywords = {
 // Pre Processor, Processor Lang
 const char PROCESSED_SYMBS[] = {
       '#' // Var
-    , '$' // Operators
+    , '$' // Operators MATHS
     , '@' // Funcs
+    , ' '
 };
 
 
@@ -303,7 +305,7 @@ typedef struct
 }VariableS_t;
 static VariableS_t gVARIABLES;
 
-static int z_Variable_addVariableToScope(int type, int size)
+static int z_Variable_pushVariableToScope(int type, int size)
 {
     int scope = gVARIABLES.ScopeUsed - 1;
     if (gVARIABLES.VarUsed[scope] == gVARIABLES.VarSize[scope])
@@ -319,7 +321,7 @@ static int z_Variable_addVariableToScope(int type, int size)
 
     return 0;
 }
-static int z_Variable_delVariableFromScope(void)
+static int z_Variable_popVariableFromScope(void)
 {
     int scope = gVARIABLES.ScopeUsed - 1;
 
@@ -343,7 +345,7 @@ static int z_Variable_delVariableFromScope(void)
 
     return 0;
 }
-static int z_Variable_addVariableScope(void)
+static int z_Variable_pushVariableScope(void)
 {
     int scope = gVARIABLES.ScopeUsed;
 
@@ -362,13 +364,13 @@ static int z_Variable_addVariableScope(void)
 
     return 0;
 }
-static int z_Variable_delVariableScope(void)
+static int z_Variable_popVariableScope(void)
 {
     int scope = gVARIABLES.ScopeUsed -1;
 
     while (gVARIABLES.VarUsed[scope] != 0)
     {
-        z_Variable_delVariableFromScope();
+        z_Variable_popVariableFromScope();
     }
 
     if ( !z_checkIfInRange__MF(( gVARIABLES.ScopeSize - gVARIABLES.ScopeUsed ), 0, Z_VARIABLE_BLOCKSIZE_SCOPE ) )
@@ -458,10 +460,15 @@ static int z_Variable_destroy(void)
 }
 
 
-#define z_Var_getVarUsedin(a)\
+#define z_Variable_getVarUsedin__MF(a)\
     gVARIABLES.VarUsed[a]
-#define z_Var_getVarSizein(a)\
+#define z_Variable_getVarSizein__MF(a)\
     gVARIABLES.VarSize[a]
+
+#define z_Variable_getScopeUsed__MF()\
+    gVARIABLES.ScopeUsed
+#define z_Variable_getScopeSize__MF()\
+    gVARIABLES.ScopeSize
 // Variable END
 
 
@@ -616,9 +623,11 @@ static void z_operator_asign(char * line, int line_width, const int VarPos)
 
 static int z_interpreter(const String_t ZFILE_PreP)
 {
+    //z_Variable_pushVariableScope();
+
     String_t zfile_tmp = z__copyString(ZFILE_PreP);
 
-    const int x = 100, y = 1000;
+    const int x = 10000, y = 300;
     char ** buff2D = zse_malloc_2D_array_char(x, y);
     char *tmp_line = malloc(sizeof(char) * x);
 
@@ -635,7 +644,7 @@ static int z_interpreter(const String_t ZFILE_PreP)
 
         while (token != NULL)
         {
-            if (strcmp(token, "var") == 0)
+            if (*token == 'v')
             {
                 token = strtok(NULL, " \n\t");
                 int VarCount = 1;
@@ -646,7 +655,7 @@ static int z_interpreter(const String_t ZFILE_PreP)
                 }
                 for (int i = 0; i < VarCount; ++i)
                 {
-                    z_Variable_addVariableToScope(1, 1);
+                    z_Variable_pushVariableToScope(1, 1);
                 }
                 
 
@@ -672,7 +681,7 @@ static int z_interpreter(const String_t ZFILE_PreP)
                 }
 
             }
-            else if (strcmp(token, "print") == 0)
+            else if (*token == 'p')
             {
                 token = strtok(NULL, " \n\t");
                 if (token[0] == '#')
@@ -684,8 +693,23 @@ static int z_interpreter(const String_t ZFILE_PreP)
                 }
             }
             
-            token = strtok(NULL, " \n\t");
+            else if (*token == 'd')
+            {
+                token = strtok(NULL, " \n\t");
+                int VarCount = 1;
+                if (z_isDigit__MF(token[0]))
+                {
+                    VarCount = atoi(token);
 
+                }
+                for (int i = 0; i < VarCount; ++i)
+                {
+                    z_Variable_popVariableFromScope();
+                }
+            }
+
+
+            token = strtok(NULL, " \n\t");
         }
     }
 
@@ -703,17 +727,97 @@ static int z_start(const char * filename)
         dieOnCommand("Cannot Open zFile", ERROR_CODE__MISC__FILE_CANT_BE_OPENED, (char*)filename);
     }
 
-    
-
     return 0;
 }
 
+#ifdef Z_DEV_TEST_ENABLED
 
+static void z__DEV_showallStack(void)
+{
+    fputs("\n\n/********/\nShowing All Scopes In Memory\n/********/\n\n", stdout);
+
+    fputs("SCOPE:\n[", stdout);
+    for (int i = 0; i < z_Variable_getScopeSize__MF() ; ++i)
+    {
+        if (i < z_Variable_getScopeUsed__MF())
+        {
+            printf(" 1,");
+        }
+        else {
+            printf(" 0,");
+        }
+    }
+    printf("\b ]\n");
+
+    fputs("\n\n/********/\nShowing All Variables In Scopes\n/********/\n\n", stdout);
+    for (int i = 0; i < z_Variable_getScopeUsed__MF(); ++i)
+    {
+        printf("SCOPE:%03d: [", i);
+        for (int j = 0; j < z_Variable_getVarSizein__MF(i); ++j)
+        {
+            if (j < z_Variable_getVarUsedin__MF(i))
+            {
+                printf(" 1,");
+            }
+            else
+            {
+                printf(" 0,");
+            }
+        }
+        printf("\b ]\n");
+    }
+}
+
+static void z__DEV_main(char *arg0, char *arg1)
+{
+    z__DEV_showallStack();
+}
+
+#endif
+
+int phrase(int argc, char *argv[])
+{
+    for (int i = 0; i < argc; ++i)
+    {
+        if (argv[i][0] == '-')
+        {
+            switch(argv[i][1])
+            {
+                case 'h':
+                    puts(ZAKAROUF__ZINT_HELP);
+                break;
+
+                case 'i':
+                z_Variable_pushVariableScope();
+                    z_start(argv[i+1]);
+                    
+                break;
+
+
+
+                #ifdef Z_DEV_TEST_ENABLED
+                case 'D':
+                    z__DEV_main(argv[i], argv[i+1]);
+                break;
+                
+
+                #endif
+
+                default:
+                break;
+            }
+        }
+    }
+
+    return 0;
+}
 
 int main(int argc, char const *argv[])
 {
     z_Variable_init();
 
-    z_start(argv[1]);
+    phrase(argc, (char **)argv);
+
+    //z_start(argv[1]);
     return 0;
 }
