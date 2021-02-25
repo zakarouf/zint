@@ -1,0 +1,19 @@
+fn zak(void)
+
+	x = 10
+	y = 5
+
+	z = + x y
+
+	print z
+
+fnend
+
+
+
+fn fa(void)
+
+	print called me?
+
+fnend
+
