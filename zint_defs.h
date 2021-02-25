@@ -8,7 +8,7 @@
 #define ZAKAROUF__ZINT_HELP\
   "Usage:\n"\
   \
-  "  zint -i[p] [FILENAME] [OPTIONS...]\n\n"\
+  "  zint -i[p] [OPTIONS...] [FILENAME] [PROGRAME ARGS...] \n\n"\
   "  zint (Z Interpretor) by Zakarouf\n\n"\
   "  "ZAKAROUF__ZINT_HOSTPAGE"\n\n"\
 

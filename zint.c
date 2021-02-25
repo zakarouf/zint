@@ -8,9 +8,15 @@
 #include <string.h>
 
 #include "zint_defs.h"
+#include "zint_string.h"
 
-//#define Z_DEBUG_ENABLED     //Comment this line out if you dont want to do a debug build
-#define Z_DEV_TEST_ENABLED   //Instialize Developer Test kit
+ //#define ZINT_DEBUG_ENABLED     /* Comment this line out if you dont want to do a debug build */
+ //#define ZINT_DEV_TEST_ENABLED  /* Instialize Developer Test kit */
+ //#define ZINT_DEBUG__SHOW_PUSH_AND_POP_VARS_ENABLED
+ //#define ZINT_DEBUG__SHOW_PUSH_AND_POP_SCOPE_ENABLED
+
+// #define ZINT_DEBUG__LOGGER_ENABLED
+ #define ZINT_DEBUG__LOGGER_LOG_MEMORY
 
 enum ERROR_CODE
 {
@@ -28,257 +34,139 @@ enum ERROR_CODE
     , ERROR_CODE__MISC__FILE_CANT_BE_OPENED
 };
 
-// Kill Switch if Anything goes wrong
+#ifdef ZINT_DEBUG__LOGGER_LOG_MEMORY
+long zint_sys_getRamUsage(void)
+{
+    struct rusage usage;
+    int ret;
+    ret = getrusage(RUSAGE_SELF, &usage);
+    return usage.ru_maxrss;
+}
+#endif
+
+/* Kill Switch if Anything goes wrong ( Usually Used For Debug Purpose ) */
 static void dieOnCommand(char *msg, int CODE, char * codesnip)
 {
-    fprintf(stderr, "ERROR:%d:%s\n\n\t%s", CODE, msg, codesnip);
+    fprintf(stderr, "DIED:%d:%s\n\n>>> %s\n", CODE, msg, codesnip);
     exit(1);
 }
 
 
-//Macro Funcs
+/* Basic Macro Functions */
 
-// Check if Value is in range, 1 if it is...
+/* Check if Value is in range, 1 if it is... */
 #define z_checkIfInRange__MF(val, min, max)\
     (( (val) < min) ? 0 : (( (val) < max) ? 1 : 0 ))
 
-// Check if Given Char is Digit
+/* Check if Given Char is Digit */
 #define z_isDigit__MF(c)\
     (((c) < '0') ? 0 : (((c) <= '9') ? 1 : 0 ))
 
-// Wrap up int
+/* Wrap up int */
 #define z_wrapInt__MF(x, MaxValue)\
     (x)%(MaxValue)
 
-// Check if Character is Alphabate
+/* Check if Character is Alphabate */
 #define z_isAlpha__MF(c)\
     (z_checkIfInRange__MF((c), 'A', 'Z'+1) == 1 ? z_checkIfInRange__MF((c), 'a', 'z'+1): 0 )
-//Macro Funcs END
 
-// See if `Char` exist in a string
-static int z_findCharInStr(char *str, int sz, char c, int fromIndex)
-{
-    for (int i = fromIndex; i < sz; ++i)
-    {
-        if(str[i] == c)
-            return i;
-    }
-    return -1;
-}
+/* Convert Ascii Char To Int (Single Char) */
+#define z_charToInt__MF(c)\
+    (c)-'0'
 
+/* Basic Macro Functions END */
 
-// Strings
-typedef struct Z_STRING
-{
-    char * str;
-    int size;
-
-}String_t;
-
-String_t z__createString(int size)
-{
-    return (String_t){
-
-        .str = malloc(sizeof(char) * size),
-        .size = size
-    };
-}
-
-#define z__fillString_MF(String, val)\
-    memset(String.str, (val), String.size)
-
-void z__deleteString(String_t * s)
-{
-    free(s->str);
-    s->size = 0;
-}
-
-String_t z__copyString(String_t str)
-{
-
-    String_t str2 = {
-        .str = malloc(sizeof(char) * str.size),
-        .size = str.size,
-    };
-
-    memcpy(str2.str, str.str, str.size);
-
-    return str2;
-}
-
-// Malloc And Free 2d Char, Taken from Ztorg (https://github.com/zakarouf/ztorg)
-static char **zse_malloc_2D_array_char (unsigned int x, unsigned int y) {
-
-    char **arr = malloc(y * sizeof(char*));
-    for (int i = 0; i < y; ++i)
-    {
-        arr[i] = (char*)malloc(x * sizeof(char));
-    }
-
-    return arr;
-
-}
-static void zse_free2dchar(char **mem, int size)
-{
-    for (int i = 0; i < size; ++i)
-    {
-        free(mem[i]);
-    }
-    free(mem);
-
-}
-
-// String END
-
-
-
-// KeyWords, Tokens
-
-typedef enum TOKEN_S_enum
-{
-      TOKEN_var = 0
-    , TOKEN_if
-    , TOKEN_else
-    , TOKEN_elif
-    , TOKEN_then
-    , TOKEN_endif
-    , TOKEN_for
-    , TOKEN_forend
-    , TOKEN_while
-    , TOKEN_wlend
-    , TOKEN_fn 
-    , TOKEN_fnend
-    , TOKEN_call
-}TOKEN_S_enum;
-
-typedef struct _
-{
-    String_t gKEYWORDS[20];
-    TOKEN_S_enum sign;
-
-}Keywords_t;
-
-Keywords_t Keywords = {
-    .gKEYWORDS = {
-          { "var"     , 4 }
-        , { "if"      , 3 }
-        , { "else"    , 5 }
-        , { "elif"    , 5 }
-        , { "then"    , 5 }
-        , { "endif"   , 6 }
-        , { "for"     , 4 }
-        , { "forend"  , 7 }
-        , { "while"   , 6 }
-        , { "wlend"   , 6 }
-        , { "fn"      , 3 }
-        , { "fnend"   , 6 }
-        , { "pub"     , 4 }
-        , { "call"    , 5 }
-    }
-};
-
-//Keyword END
-
+/*
 // Pre Processor, Processor Lang
 const char PROCESSED_SYMBS[] = {
-      '#' // Var
+      _ZINT__PreP_VARIABLE_SYMB  // Var
     , '$' // Operators MATHS
     , '@' // Funcs
-    , ' '
+    , '!' // Keywords
 };
 
+------------------------------------------------------------------------------------
+            ------------KEYWORDS------------
 
-// Basic mathFunc
-static double z_add_func(double a, double b)
-{
-    return a + b;
-}
-static double z_sub_func(double a, double b)
-{
-    return a - b;
-}
-static double z_mul_func(double a, double b)
-{
-    return a * b;
-}
-static double z_div_func(double a, double b)
-{
-    return a + b;
-}
+    STATEMENTS [!]
 
-typedef double (*mathFunc_Basic_tf)(double, double);
-#define Z_MATHFUNCS_BASIC__TOTAL 4
-
-mathFunc_Basic_tf MathFuncs_Basic[Z_MATHFUNCS_BASIC__TOTAL] = {
-      z_add_func
-    , z_sub_func
-    , z_mul_func
-    , z_div_func
-};
-
-typedef enum
-{
-      Z_MathFunc_Basic__ADD = 0
-    , Z_MathFunc_Basic__SUB
-    , Z_MathFunc_Basic__MUL
-    , Z_MathFunc_Basic__DIV
-
-}Z_MathFunc_Basic_ENUMS;
-
-typedef struct
-{
-    mathFunc_Basic_tf Basic[Z_MATHFUNCS_BASIC__TOTAL];
-    char Basic_ch[Z_MATHFUNCS_BASIC__TOTAL];
-    Z_MathFunc_Basic_ENUMS Basic_enums;
-    int Basic_Total;
+     !0 (char *, int) => Push Varaible
+     !1 (char *, int) => Pop Variable
 
 
-}MathFuncs_t;
-
-MathFuncs_t MathFuncs = {
-    .Basic = {
-          z_add_func
-        , z_sub_func
-        , z_mul_func
-        , z_div_func
-    },
-
-    .Basic_ch = {
-        '+','-','*','/'
-    },
-
-    .Basic_Total = Z_MATHFUNCS_BASIC__TOTAL
-
-};
-// Math Funcs END
+     !2 (char *, int) => In-build Print Function
+     !3 (char *, int) => In-Build Input Function
 
 
+     !4 (char *, int) => IF Statement
+        --Push IF Vars--
+
+        --Get & Check IF--
+            --PushVar--
+                --Do Someting--
+            --DelVar--
+        --Get & Check ELSE IF--
+            --PushVar--
+                --Do Someting--
+            --DelVar--
+        --Get & Check ELSE--
+            --PushVar--
+                --Do Someting--
+            --DelVar--
+        
+        --Pop IF Vars--
 
 
-// Variable Management
-// // Keep Track of Variable
-/*
-typedef struct _Var_t
-{
-    double var;
-    long int id;
+     !5 (char *, int) => Goto Statement
+        --Goto a line of code and Execute from there 
+            (NOTE: Goto Requires a Lable with :)
 
 
-    struct _Var_t *next;
-    struct _Var_t *prev;
+     !6 (char *, int) => Call Function
+        -- Call Fuction Set its Variable and Get a Value in Return
+        (NOTE: Calls Requires a Lable with @)
 
-}Var_t;
+     !7 Push Scope
+     !8 Pop Scope
+
+     EXTRA:
+        for loop   
+        while loop
+                    => Use !4,!5 (If,esle) & !6 (Goto) To create Loops
+
+            --------------------------------
+------------------------------------------------------------------------------------
 */
+/*----------------------------*/
 
-#define Z_VARIABLE_BLOCKSIZE_SCOPE 8 // Memory Allocated/Freed At once. FOR SCOPESIZE
-#define Z_VARIABLE_BLOCKSIZE_VSIZE 8 // Memory Allocated/Freed At once. FOR VarSize
+#define _ZINT__PreP_VARIABLE_SYMB '#'
+#define _ZINT__PreP_KEYWORD_SYMB  '!'
+#define _ZINT__PreP_FUNCTION_SYMB '@'
+#define _ZINT__PreP_OPERATOR_SYMB 'o'
+#define _ZINT__PreP_ESCAPE_SYMB   '\\'
+
+/*----------------------------*/
+
+
+
+
+
+
+/********************************************/
+/*     Variables & Variables Management     */
+/*            ------------------            */
+/*                   START                  */
+/*                  -------                 */
+/********************************************/
+#define ZINT_VARIABLE_BLOCKSIZE_SCOPE 4 // Memory Allocated/Freed At once. FOR SCOPESIZE
+#define ZINT_VARIABLE_BLOCKSIZE_VSIZE 8 // Memory Allocated/Freed At once. FOR VarSize
 
 typedef double Variable_vartype;
 
 typedef struct _Var_t
 {
     Variable_vartype *value;
-    long id;
+    //long id;
     int size;
     int type;
 
@@ -288,29 +176,45 @@ typedef struct
 {
     Var_t **VARS;
 
-    int *VarUsed;   // Variable USED in *VARS
-    int *VarSize; // TOTAL SIZE OF *VARS
+    int *VarUsed;   // Variable USED in **VARS
+    int *VarSize;   // TOTAL SIZE OF **VARS
 
-    int ScopeUsed;       // Space Used      in **VARS, *VarAt, *VarSize
-    int ScopeSize;     // Space Available in **VARS, *VarAt, *VarSize
+    int ScopeUsed;     // Space Used      in *VARS, *VarAt, *VarSize
+    int ScopeSize;     // Space Available in *VARS, *VarAt, *VarSize
 
     /*
-     *    NOTE: `ScopeAt` and `*VarAt` always point to a Clean/Unused Space.
+     *    NOTE: `ScopeUsed` and `*VarUsed` always point to a Clean/Unused Space.
      *        
      *    [ 1 , 1 , 1 , 1 , 1 , 0 , 0 , 0 , 0 , 0 ] <- (1 = Space is Used, 0 = Space is not Used)
      *                          ^
-     *                          ScopeAt is pointing hear, Same with *VarAt
+     *                          ScopeUsed is pointing hear, Same with *VarUsed
      */
 
 }VariableS_t;
 static VariableS_t gVARIABLES;
 
+#define z_Variable_getVarUsedin__MF(a)\
+    gVARIABLES.VarUsed[a]
+#define z_Variable_getVarSizein__MF(a)\
+    gVARIABLES.VarSize[a]
+
+#define z_Variable_getScopeUsed__MF()\
+    gVARIABLES.ScopeUsed
+#define z_Variable_getScopeSize__MF()\
+    gVARIABLES.ScopeSize
+
+
+
+/* Add A Variable To (Scope) **VARS  At Top */
 static int z_Variable_pushVariableToScope(int type, int size)
 {
     int scope = gVARIABLES.ScopeUsed - 1;
-    if (gVARIABLES.VarUsed[scope] == gVARIABLES.VarSize[scope])
+    if (gVARIABLES.VarUsed[scope] >= gVARIABLES.VarSize[scope])
     {
-        gVARIABLES.VarSize[scope] += Z_VARIABLE_BLOCKSIZE_VSIZE;
+        #ifdef ZINT_DEBUG__SHOW_PUSH_AND_POP_VARS_ENABLED
+            printf("\nLOG:VU%d VS%d \n", gVARIABLES.VarUsed[scope], gVARIABLES.VarSize[scope]);
+        #endif
+        gVARIABLES.VarSize[scope] += ZINT_VARIABLE_BLOCKSIZE_VSIZE;
         gVARIABLES.VARS[scope] = realloc(gVARIABLES.VARS[scope], sizeof(Var_t)* gVARIABLES.VarSize[scope] );
     }
 
@@ -321,22 +225,27 @@ static int z_Variable_pushVariableToScope(int type, int size)
 
     return 0;
 }
+/* Delete A Variable To (Scope) **VARS  At Top */
 static int z_Variable_popVariableFromScope(void)
 {
     int scope = gVARIABLES.ScopeUsed - 1;
+    int *VarScopeUsed = &gVARIABLES.VarUsed[scope];
 
-    free(gVARIABLES.VARS[scope][gVARIABLES.VarUsed[scope]].value);
-    gVARIABLES.VARS[scope][gVARIABLES.VarUsed[scope]].size = 0;
-    gVARIABLES.VARS[scope][gVARIABLES.VarUsed[scope]].type = 0;
+    free(gVARIABLES.VARS[scope][*VarScopeUsed].value);
+    gVARIABLES.VARS[scope][*VarScopeUsed].size = 0;
+    gVARIABLES.VARS[scope][*VarScopeUsed].type = 0;
 
-    if ( !z_checkIfInRange__MF((gVARIABLES.VarSize[scope] - gVARIABLES.VarUsed[scope]), 0, Z_VARIABLE_BLOCKSIZE_VSIZE) )
+    if ( (gVARIABLES.VarSize[scope] - gVARIABLES.VarUsed[scope] ) >= ZINT_VARIABLE_BLOCKSIZE_VSIZE )
     {
-        gVARIABLES.VarSize[scope] -= Z_VARIABLE_BLOCKSIZE_VSIZE;
-        #ifdef Z_DEBUG_ENABLED
+        gVARIABLES.VarSize[scope] -= ZINT_VARIABLE_BLOCKSIZE_VSIZE;
+        #ifdef ZINT_DEBUG_ENABLED
         if (gVARIABLES.VarSize[scope] < 0)
         {
             dieOnCommand("Variable VarSize Reached Negetive\n", ERROR_CODE__DELETION__FAIL_VARSIZE_REACHED_NEGETIVE_VALUE, "");
         }
+        #endif
+        #ifdef ZINT_DEBUG__SHOW_PUSH_AND_POP_VARS_ENABLED
+            printf("\nLOG:VU%d VS%d \n", gVARIABLES.VarUsed[scope], gVARIABLES.VarSize[scope]);
         #endif
         gVARIABLES.VARS[scope] = realloc(gVARIABLES.VARS[scope], sizeof(Var_t)* gVARIABLES.VarSize[scope] );
     }
@@ -345,13 +254,14 @@ static int z_Variable_popVariableFromScope(void)
 
     return 0;
 }
+/* Add Scope To Top */
 static int z_Variable_pushVariableScope(void)
 {
     int scope = gVARIABLES.ScopeUsed;
 
-    if ( gVARIABLES.ScopeUsed == gVARIABLES.ScopeSize )
+    if ( gVARIABLES.ScopeUsed >= gVARIABLES.ScopeSize )
     {
-        gVARIABLES.ScopeSize += Z_VARIABLE_BLOCKSIZE_SCOPE;
+        gVARIABLES.ScopeSize += ZINT_VARIABLE_BLOCKSIZE_SCOPE;
         gVARIABLES.VARS = realloc(gVARIABLES.VARS, sizeof(Var_t) * gVARIABLES.ScopeSize);
         gVARIABLES.VarSize = realloc(gVARIABLES.VarSize, sizeof(int) * gVARIABLES.ScopeSize);
         gVARIABLES.VarUsed = realloc(gVARIABLES.VarUsed, sizeof(int) * gVARIABLES.ScopeSize);
@@ -364,19 +274,24 @@ static int z_Variable_pushVariableScope(void)
 
     return 0;
 }
+/* Delete Scope From Top */
 static int z_Variable_popVariableScope(void)
 {
     int scope = gVARIABLES.ScopeUsed -1;
 
-    while (gVARIABLES.VarUsed[scope] != 0)
+    while (gVARIABLES.VarUsed[scope] >= 0 )
     {
+        #ifdef ZINT_DEBUG__SHOW_PUSH_AND_POP_VARS_ENABLED
+            printf("\nLOG:VU%d VS%d \n", gVARIABLES.VarUsed[scope], gVARIABLES.VarSize[scope]);
+        #endif
         z_Variable_popVariableFromScope();
     }
 
-    if ( !z_checkIfInRange__MF(( gVARIABLES.ScopeSize - gVARIABLES.ScopeUsed ), 0, Z_VARIABLE_BLOCKSIZE_SCOPE ) )
+    if ( ( gVARIABLES.ScopeSize - gVARIABLES.ScopeUsed ) >= ZINT_VARIABLE_BLOCKSIZE_SCOPE)
     {
-        gVARIABLES.ScopeSize -= Z_VARIABLE_BLOCKSIZE_SCOPE;
-        #ifdef Z_DEBUG_ENABLED
+        
+        gVARIABLES.ScopeSize -= ZINT_VARIABLE_BLOCKSIZE_SCOPE;
+        #ifdef ZINT_DEBUG_ENABLED
         if (gVARIABLES.ScopeSize < 0)
         {
             dieOnCommand("Variable Scope Reached Negetive\n", ERROR_CODE__DELETION__FAIL_SCOPESIZE_REACHED_NEGETIVE_VALUE, "");
@@ -391,12 +306,11 @@ static int z_Variable_popVariableScope(void)
 
     return 0;
 }
-
-
+/* Change Variable Value In Current Scope */
 static void z_Variable_changeValue(int varID, double value)
 {
     int scope = gVARIABLES.ScopeUsed -1;
-    #ifdef Z_DEBUG_ENABLED
+    #ifdef ZINT_DEBUG_ENABLED
     if (gVARIABLES.VarUsed[scope] <= varID)
     {
         dieOnCommand("VARID IS IS NOT IN USE\n", ERROR_CODE__SYNTAX, "");
@@ -405,25 +319,42 @@ static void z_Variable_changeValue(int varID, double value)
     
     *gVARIABLES.VARS[scope][varID].value = value;
 }
-
+/* Access Variable From Current Scope */
 static double z_Variable_accessVariable(int varID)
 {
     int scope = gVARIABLES.ScopeUsed -1;
 
-    #ifdef Z_DEBUG_ENABLED
+    #ifdef ZINT_DEBUG_ENABLED
     if (gVARIABLES.VarUsed[scope] <= varID)
     {
-        dieOnCommand("VarID is Over the Access Limit", ERROR_CODE__PREP_SYNTAX_VARID_OVER_ACCESS_LIMIT, "");
+        char ID[10];
+        sprintf(ID, "%d", varID);
+        dieOnCommand("VarID is Over the Access Limit", ERROR_CODE__PREP_SYNTAX_VARID_OVER_ACCESS_LIMIT, ID);
     }
     #endif
 
     return *gVARIABLES.VARS[scope][varID].value;
 }
+static double *z_Variable_accessVariableMemory(int varID)
+{
+    int scope = gVARIABLES.ScopeUsed -1;
 
+    #ifdef ZINT_DEBUG_ENABLED
+    if (gVARIABLES.VarUsed[scope] <= varID)
+    {
+        char ID[10];
+        sprintf(ID, "%d", varID);
+        dieOnCommand("VarID Memory is Over the Access Limit", ERROR_CODE__PREP_SYNTAX_VARID_OVER_ACCESS_LIMIT, ID);
+    }
+    #endif
+
+    return gVARIABLES.VARS[scope][varID].value;
+}
+/* Start Variable */
 static int z_Variable_init(void)
 {
     gVARIABLES.ScopeUsed = 1;
-    gVARIABLES.ScopeSize = Z_VARIABLE_BLOCKSIZE_SCOPE ;
+    gVARIABLES.ScopeSize = ZINT_VARIABLE_BLOCKSIZE_SCOPE ;
 
     gVARIABLES.VarUsed   = malloc(sizeof(int) * gVARIABLES.ScopeSize);
     gVARIABLES.VarSize = malloc(sizeof(int) * gVARIABLES.ScopeSize);
@@ -439,7 +370,7 @@ static int z_Variable_init(void)
 
     for (int i = 0; i < gVARIABLES.ScopeSize; ++i)
     {
-        gVARIABLES.VarSize[i] = Z_VARIABLE_BLOCKSIZE_VSIZE;
+        gVARIABLES.VarSize[i] = ZINT_VARIABLE_BLOCKSIZE_VSIZE;
     }
 
     gVARIABLES.VARS = malloc(sizeof(Var_t*) * gVARIABLES.ScopeSize);
@@ -451,45 +382,165 @@ static int z_Variable_init(void)
 
     return 0;
 }
-
+/* Collapse Variable in its Entirity */
 static int z_Variable_destroy(void)
 {
+    for (int i = 0; i <= z_Variable_getScopeUsed__MF(); ++i)
+    {
 
+        z_Variable_popVariableScope();
+    }
 
     return 0;
 }
+/********************************************/
+/*     Variables & Variables Management     */
+/*            ------------------            */
+/*                    END                   */
+/*                  -------                 */
+/********************************************/
 
 
-#define z_Variable_getVarUsedin__MF(a)\
-    gVARIABLES.VarUsed[a]
-#define z_Variable_getVarSizein__MF(a)\
-    gVARIABLES.VarSize[a]
 
-#define z_Variable_getScopeUsed__MF()\
-    gVARIABLES.ScopeUsed
-#define z_Variable_getScopeSize__MF()\
-    gVARIABLES.ScopeSize
-// Variable END
-
-
-// Break String into List of String (Into Tokens)
-static int z_BreakStringInto2DString_ASTOKENS (char ** buffer2D ,int buffXsize, int buffYsize, char *buffer, char *token_breaker)
+/********************************************/
+/*               Math Functions             */
+/*            ------------------            */
+/*                   START                  */
+/*                  -------                 */
+/********************************************/
+static double z__MATHFUNC__add_func(double a, double b)
 {
-    char * token;
-    int count = 0;
-
-    token = strtok(buffer, token_breaker);
-
-    for (int i = 0; i < buffXsize && token != NULL; ++i)
-    {
-        sprintf(buffer2D[i], "%s", token);
-        token = strtok(NULL, token_breaker);
-        count++;
-    }
-
-    return count;
+    return a + b;
+}
+static double z__MATHFUNC__sub_func(double a, double b)
+{
+    return a - b;
+}
+static double z__MATHFUNC__mul_func(double a, double b)
+{
+    return a * b;
+}
+static double z__MATHFUNC__div_func(double a, double b)
+{
+    return a + b;
+}
+static double z__MATHFUNC__mod_func(double a, double b)
+{
+    return fmod(a, b);
 }
 
+typedef double (*mathFunc_Basic_tf)(double, double);
+#define ZINT_MATHFUNCS_BASIC__TOTAL 5
+
+/*
+typedef enum
+{
+      ZINT_MathFunc_Basic__ADD = 0
+    , ZINT_MathFunc_Basic__SUB
+    , ZINT_MathFunc_Basic__MUL
+    , ZINT_MathFunc_Basic__DIV
+    , ZINT_MathFunc_Basic__MOD
+
+}ZINT_MathFunc_Basic_ENUMS;
+*/
+typedef struct
+{
+    mathFunc_Basic_tf        Basic    [ZINT_MATHFUNCS_BASIC__TOTAL];
+    char                     Basic_ch [ZINT_MATHFUNCS_BASIC__TOTAL];
+    //ZINT_MathFunc_Basic_ENUMS Basic_enums;
+    int                      Basic_Total;
+
+}MathFuncs_t;
+
+
+MathFuncs_t MathFuncs = {
+    .Basic = {
+          z__MATHFUNC__add_func
+        , z__MATHFUNC__sub_func
+        , z__MATHFUNC__mul_func
+        , z__MATHFUNC__div_func
+        , z__MATHFUNC__mod_func
+    },
+
+    .Basic_ch = {
+        '+','-','*','/','%'
+    },
+
+    .Basic_Total = ZINT_MATHFUNCS_BASIC__TOTAL
+
+};
+/********************************************/
+/*               Math Functions             */
+/*            ------------------            */
+/*                    END                   */
+/*                  -------                 */
+/********************************************/
+
+/*
+ *
+ *
+ *
+ *
+ */
+// Break String into List of String (Into Tokens)
+
+StringLineArr_t gFUNCTIONS;
+static void z_BreakStringInto2DString_FUNTION_ASTOKENS (StringLines_t *buffer2D, char * buffer, char *token_breaker)
+{
+    char * token = strtok(buffer, token_breaker);
+
+    int i;
+    for (i = 0; i < buffer2D->y && token != NULL; ++i)
+    {
+        snprintf(buffer2D->lines[i], buffer2D->x ,"%s", token);
+        token = strtok(NULL, token_breaker);
+    }
+
+    buffer2D->linesUsed = i;
+}
+
+static StringLineArr_t z_BreakStringIntoFunctions (String_t buffer)
+{
+    char * tmp_buff_ptr = buffer.str;
+    const int ls_size_x = 96;
+    const int ls_size_y = 200;
+    
+
+    char * token = strtok(tmp_buff_ptr, "|");
+
+    int used = 0;
+
+
+    // Breaking Functions Into Strings
+    StringLines_t ln = z__StringLines_createEmpty(96 * 200, 10);
+    while(token != NULL)
+    {
+        if (*token == '@')
+        {
+            snprintf(ln.lines[used], ln.x, "%s", token);
+            used++;
+        }
+        token = strtok(NULL, "|");
+    }
+
+
+    StringLineArr_t Functions = z__StringLinesArr_createEmpty(used+8, ls_size_x, ls_size_y);
+    
+
+    for (int i = 0; i < used; ++i)
+    {
+        z_BreakStringInto2DString_FUNTION_ASTOKENS (&Functions.fn[i], ln.lines[i], ";");
+        z__StringLines_Resize_Y(&Functions.fn[i], Functions.fn[i].linesUsed+1);
+    }
+
+    z__StringLines_destroy(&ln);
+
+    Functions.used = used;
+    return Functions;
+
+}
+
+// Read File as String
 static String_t z_ReadFromFile(char *file)
 {
     int string_size;
@@ -516,44 +567,14 @@ static String_t z_ReadFromFile(char *file)
     return (String_t)
             {string, string_size};
 }
-/*
-static Variable_vartype z_operator_callMathFuncs(char *line, int line_width)
-{
-    int in = 0
-      , it = 0;
-    int type;
-    double Val[2];
 
-    sscanf( &line[1] ,"%d", &type);
-    if ((in = z_findCharInStr(line, line_width, '#', in)) == -1)
-    {
-        char * token = strtok(&line[1], " \n\t");
-        while(token && it < 2)
-        {
-            if (z_isDigit__MF(token[0]))
-            {
-                Val[it] = atof(token);
-                it+=1;
-            }
-        }
-
-        sscanf( &line[in+1],"%lf", &Val[0]);
-        sscanf( &line[in+1],"%lf", &Val[1]);
-
-        //return MathFuncs.Basic[type](Val[0], Val[1]);
-    }
-    
-    sscanf( &line[in+1],"%lf", &Val[0]);
-    
-    in = z_findCharInStr(line, line_width, '#', in+1);
-    sscanf( &line[in+1],"%lf", &Val[1]);
-
-    Val[0] = z_Variable_accessVariable(Val[0]);
-    Val[1] = z_Variable_accessVariable(Val[1]);
-
-    return MathFuncs.Basic[type](Val[0], Val[1]);
-}
-*/
+/********************************************/
+/*             Main Interpretor             */
+/*            ------------------            */
+/*                   START                  */
+/*                  -------                 */
+/********************************************/
+/* Call Basic Math Funcs */
 static Variable_vartype z_operator_callMathFuncs(char *line, int line_width)
 {
     int it = 0;
@@ -566,7 +587,7 @@ static Variable_vartype z_operator_callMathFuncs(char *line, int line_width)
 
     while (token != NULL && it < 2)
     {
-        if (token[0] == '#')
+        if (token[0] == _ZINT__PreP_VARIABLE_SYMB )
         {
             token++;
             Val[it] = atof(token);
@@ -585,22 +606,18 @@ static Variable_vartype z_operator_callMathFuncs(char *line, int line_width)
     return MathFuncs.Basic[type](Val[0], Val[1]);
 }
 
+/* Assingment Operator */
 static void z_operator_asign(char * line, int line_width, const int VarPos)
 {
-    int in = z_findCharInStr(line, line_width, '=', 0);
+    int in = z_findCharInStr((String_t){line, line_width}, '=', 0);
 
     for (int i = in; i < line_width; ++i)
     {
-        if (line[i] == '$')
+        if (line[i] == _ZINT__PreP_OPERATOR_SYMB )
         {
-            
 
             double newVal = z_operator_callMathFuncs(&line[i], line_width-i);
             z_Variable_changeValue(VarPos, newVal);
-
-            //printf("Check:%lf : %c\n", Val1, line[in]);
-            //printf("Check:%lf : %c\n", Val2, line[in]);
-            //printf("NEWVAL: %lf\n", newVal);
 
             return;
 
@@ -616,52 +633,315 @@ static void z_operator_asign(char * line, int line_width, const int VarPos)
         }
         
     }
+}
 
+/* Do Keyword Stuff */
 
+typedef struct keywordarg
+{
+    char *tok;
+    int *i;
+}__zint_karg_t;
+
+static void z_KeyWord_0_addvariable_to_scope(void *arg)
+{
+    char *tok = ((__zint_karg_t*)(arg))->tok;
+    tok = strtok(NULL, " \n\t");
+
+    int VarCount = 1;
+    if (z_isDigit__MF( tok[0] ))
+    {
+        VarCount = atoi(tok);
+    }
+
+    for (int i = 0; i < VarCount; ++i)
+    {
+        z_Variable_pushVariableToScope(1, 1);
+    }
+
+}
+static void z_KeyWord_1_delvariable_from_scope(void *arg)
+{
+    char *tok = ((__zint_karg_t*)(arg))->tok;
+    tok = strtok(NULL, " \n\t");
+
+    int VarCount = 1;
+    if (z_isDigit__MF( tok[0] ))
+    {
+        VarCount = atoi(tok);
+    }
+
+    for (int i = 0; i < VarCount; ++i)
+    {
+        z_Variable_popVariableFromScope();
+    }
 
 }
 
-static int z_interpreter(const String_t ZFILE_PreP)
+static void z_KeyWord_2_inBuild_Print(void *arg)
 {
-    //z_Variable_pushVariableScope();
-
-    String_t zfile_tmp = z__copyString(ZFILE_PreP);
-
-    const int x = 10000, y = 300;
-    char ** buff2D = zse_malloc_2D_array_char(x, y);
-    char *tmp_line = malloc(sizeof(char) * x);
-
-    int count;
-    count = z_BreakStringInto2DString_ASTOKENS(buff2D, x, y, zfile_tmp.str, ";");
-
-
-
-    for (int i = 0; i < count; ++i)
+    char *tok = ((__zint_karg_t*)(arg))->tok;
+    tok = strtok(NULL, "/");
+    static const char ESCAPE_CHAR[] =
     {
-        memcpy(tmp_line, buff2D[i], x);
-        char * token = strtok(buff2D[i], " \n\t");
+        '$','\n','\\','#','\t', '\b', '|'
+    /*   0    1    2   3    4     5     6
+     *   
+     */
+    };
 
+    while(tok != NULL)
+    {
+        if (tok[0] == _ZINT__PreP_VARIABLE_SYMB)
+        {
+            char * t = &tok[1];
+            int VarPos = atoi(t);
+            printf("%.0lf", z_Variable_accessVariable(VarPos));
+        }
+        else if (tok[0] == '\\')
+        {
+            putchar(ESCAPE_CHAR[z_charToInt__MF(tok[1])]);
+        }
+        else
+        {
+            fputs(tok ,stdout);
+        }
+
+        tok = strtok(NULL, "/");
+    }
+
+}
+
+static void z_KeyWord_3_inBuild_Input(void *arg)
+{
+    char *tok = ((__zint_karg_t*)(arg))->tok;
+    tok = strtok(NULL, " \n\t");
+
+    char * t = &tok[1];
+    int VarPos = atoi(t);
+    double newVal;
+    scanf("%lf", &newVal);
+    z_Variable_changeValue(VarPos, newVal);
+
+}
+
+static void z_KeyWord_4_GOTO(void *arg)
+{
+    int *i = ((__zint_karg_t*)(arg))->i;
+    char *tok = ((__zint_karg_t*)(arg))->tok;
+
+    tok = strtok(NULL, " \n\t");
+
+     //printf("GOTOPOS:%i s:%s", *i+atoi(tok), tok);
+
+    *i += atoi(tok);
+   
+}
+
+static char z_operator_compare_0_Eq(double a, double b)
+{
+    return (a == b)? 1:0;
+}
+static char z_operator_compare_1_Greater(double a, double b)
+{
+    return (a > b)? 1:0;
+}
+static char z_operator_compare_2_Lesser(double a, double b)
+{
+    return (a < b)? 1:0;
+}
+static char z_operator_compare_3_NotEq(double a, double b)
+{
+    return (a != b)? 1:0;
+}
+typedef char (*Operator_Compare_TF)(double, double);
+static const Operator_Compare_TF gOperator_Compare_F[] = {
+      z_operator_compare_0_Eq
+    , z_operator_compare_1_Greater
+    , z_operator_compare_2_Lesser
+    , z_operator_compare_3_NotEq
+};
+static void z_KeyWord_5_COMPARE(void *arg)
+{
+    int *i = ((__zint_karg_t*)(arg))->i;
+    char *tok = ((__zint_karg_t*)(arg))->tok;
+    tok = strtok(NULL, " \n\t");
+
+    int call = atoi(tok);
+    double a = 0, b = 0;
+
+    // !4 0 #1 #1 5
+
+    tok = strtok(NULL, " \n\t");
+    if (*tok == '#')
+    {
+        tok++;
+        a = atof(tok);
+        a = z_Variable_accessVariable((int)a);
+    }
+    else
+    {
+        a = atof(tok);
+    }
+    tok = strtok(NULL, " \n\t");
+    if (*tok == '#')
+    {
+        tok++;
+        b = atof(tok);
+        b = z_Variable_accessVariable((int)b);
+    }
+    else
+    {
+        b = atof(tok);
+    }
+
+    if (!gOperator_Compare_F[call](a, b))
+    {
+        
+        tok = strtok(NULL, " \n\t");
+        *i += atoi(tok);
+    }
+
+}
+
+static void z_funtion(void *arg, StringLines_t ln ,Var_t * returntype);
+static void z__DEV_showallStack(void);
+static void z_KeyWord_6_Function_Call(void *arg)
+{
+    char *tok = ((__zint_karg_t*)(arg))->tok;
+
+    tok = strtok(NULL, " \n\t");
+    int call = atoi(tok);
+
+    #ifdef ZINT_DEBUG_ENABLED
+
+    if (gFUNCTIONS.size < call)
+    {
+        dieOnCommand("Funtion Call Not in Memory", ERROR_CODE__PREP_SYNTAX , tok);
+    }
+
+    #endif
+
+    z_Variable_pushVariableScope();
+
+        tok = strtok(NULL, " \n\t");
+        const int size = 32;
+        Var_t argv[size];
+        for (int i = 0; i < size; ++i)
+        {
+            argv[i].value = malloc(sizeof(double));
+        }
+        int at = 0;
+
+        while(tok != NULL)
+        {
+            argv[at].value[0] = atof(tok);
+            at += 1;
+            tok = strtok(NULL, " \n\t");  
+        }
+        
+
+        Var_t a;
+        
+        z_funtion(argv, gFUNCTIONS.fn[call], &a);
+
+        for (int i = 0; i < size; ++i)
+        {
+            free(argv[i].value);
+        }
+
+    z_Variable_popVariableScope();
+
+}
+static void z_KeyWord_7_DIE(void *arg)
+{
+    z_KeyWord_2_inBuild_Print(arg);
+    dieOnCommand("Called By Program", 0, "\n");
+}
+
+static void z_KeyWord_8_PushScope(void *arg)
+{
+    
+}
+static void z_KeyWord_9_PopScope(void *arg)
+{
+    
+}
+
+typedef void (*Keyword_t)(void*);
+#define KEYWORD_MAX 10
+Keyword_t CALL_keywords[KEYWORD_MAX] = {
+
+          z_KeyWord_0_addvariable_to_scope
+        , z_KeyWord_1_delvariable_from_scope
+        , z_KeyWord_2_inBuild_Print
+        , z_KeyWord_3_inBuild_Input
+        , z_KeyWord_4_GOTO
+        , z_KeyWord_5_COMPARE
+        , z_KeyWord_6_Function_Call
+
+        , z_KeyWord_7_DIE
+        /*, z_KeyWord_8_*/
+        /*, z_KeyWord_9_*/
+
+};
+
+static void z_funtion(void *arg, StringLines_t ln ,Var_t * returntype)
+{
+
+    int id;
+    char **tmp_lines = ln.lines;
+
+    char * tok = strtok(tmp_lines[0], " \n\t");
+
+    if (tok[0] != '@')
+    {
+
+        dieOnCommand("NOT Pointed To Lable", ERROR_CODE__SYNTAX, *tmp_lines);
+    }
+
+    sscanf(&tmp_lines[0][1], "%d", &id);
+
+    tok = strtok(NULL, " \n\t");
+
+    Var_t *v = arg;
+    int var_count = atof(tok);
+
+
+    for (int i = 0; i < var_count ; ++i)
+    {
+
+        z_Variable_pushVariableToScope(v[i].type, v[i].size);
+        z_Variable_changeValue(i, *v[i].value);
+
+    }
+
+
+
+    char *tmp_line = malloc(sizeof(char) * ln.x);
+    char *tmp_line_main = malloc(sizeof(char) * ln.x);
+
+    for (int i = 1;;++i)
+    {
+        memcpy(tmp_line, tmp_lines[i], ln.x);
+        memcpy(tmp_line_main, tmp_lines[i], ln.x);
+        char * token = strtok(tmp_line_main, " \n\t");
+
+
+        //printf("%s; <== %d:out: \n", tmp_line, i);
 
         while (token != NULL)
         {
-            if (*token == 'v')
+          
+            if (*token == _ZINT__PreP_KEYWORD_SYMB )
             {
-                token = strtok(NULL, " \n\t");
-                int VarCount = 1;
-                if (z_isDigit__MF(token[0]))
-                {
-                    VarCount = atoi(token);
+                char KEY_num = z_charToInt__MF(token[1]);
 
-                }
-                for (int i = 0; i < VarCount; ++i)
-                {
-                    z_Variable_pushVariableToScope(1, 1);
-                }
-                
-
+                CALL_keywords[(int)KEY_num](&(__zint_karg_t){token, &i});
+                goto GOTO_z_function_ENDWHILE;
             }
 
-            else if (token[0] == '#')
+            else if (token[0] == _ZINT__PreP_VARIABLE_SYMB )
             {
                 char * t = &token[1];
                 int VarPos = atoi(t);
@@ -671,7 +951,7 @@ static int z_interpreter(const String_t ZFILE_PreP)
                     token = strtok(NULL, " \n\t");
                     if (token != NULL)
                     {
-                        z_operator_asign(tmp_line, x,VarPos);
+                        z_operator_asign(tmp_line, ln.x, VarPos);
                         //z_Variable_changeValue(VarPos, atof(token));
                     }
                     else
@@ -681,56 +961,144 @@ static int z_interpreter(const String_t ZFILE_PreP)
                 }
 
             }
-            else if (*token == 'p')
-            {
-                token = strtok(NULL, " \n\t");
-                if (token[0] == '#')
-                {
-                    char * t = &token[1];
-                    int VarPos = atoi(t);
 
-                    printf("%lf\n", z_Variable_accessVariable(VarPos));
+            else if (token[0] == '@')
+            {
+                if (token[1] == '@')
+                {
+                    double val;
+                    token = strtok(NULL, " \n\t");
+                    if (token != NULL)
+                    {
+                        if (token[0] == '.' || z_isDigit__MF(token[0]))
+                        {
+                            val = atof(token);
+                        }
+                    }
+
+                    free(tmp_line);
+                    free(tmp_line_main);
+                    *returntype = (Var_t){ &val, 1, 1 };
+                    return;
                 }
+
             }
+
+
             
-            else if (*token == 'd')
-            {
-                token = strtok(NULL, " \n\t");
-                int VarCount = 1;
-                if (z_isDigit__MF(token[0]))
-                {
-                    VarCount = atoi(token);
-
-                }
-                for (int i = 0; i < VarCount; ++i)
-                {
-                    z_Variable_popVariableFromScope();
-                }
-            }
-
 
             token = strtok(NULL, " \n\t");
+            
+            
         }
+        GOTO_z_function_ENDWHILE:;
     }
 
+
+
+}
+
+/* Interprepor */
+static int z_interpreter(const String_t ZFILE_PreP)
+{
+
+    String_t zfile_tmp = z__copyString(ZFILE_PreP);
+
+
+    gFUNCTIONS = z_BreakStringIntoFunctions(zfile_tmp);
+
+    Var_t a;
+
+    z_funtion(NULL, gFUNCTIONS.fn[0] ,&a);
+
+    
+    z__destroyStringLinesArr(&gFUNCTIONS);
+    z__deleteString(&zfile_tmp);
 
     return 0;
 }
 
-static int z_start(const char * filename)
+
+static int z_start(char const  * filename)
 {
     String_t zfile = z_ReadFromFile((char *)filename);
-    z_interpreter(zfile);
+    
 
     if (zfile.str == NULL)
     {
         dieOnCommand("Cannot Open zFile", ERROR_CODE__MISC__FILE_CANT_BE_OPENED, (char*)filename);
     }
 
+    z_interpreter(zfile);
+    z__deleteString(&zfile);
+
     return 0;
 }
+/********************************************/
+/*             Main Interpretor             */
+/*            ------------------            */
+/*                   END                    */
+/*                  -----                   */
+/********************************************/
 
-#ifdef Z_DEV_TEST_ENABLED
+
+#define ZINT_UNFILE__KEYWORD_FuntionStart "fn"
+#define ZINT_UNFILE__KEYWORD_FuntionEnd "fnend"
+#define ZINT_UNFILE__KEYWORD_VariableDeclare "let"
+#define ZINT_UNFILE__KEYWORD_If "if"
+#define ZINT_UNFILE__KEYWORD_Else_If "elif"
+#define ZINT_UNFILE__KEYWORD_Else "else"
+#define ZINT_UNFILE__KEYWORD_WhileLoop_Start "while"
+#define ZINT_UNFILE__KEYWORD_WhileLoop_End "wlend"
+#define ZINT_UNFILE__KEYWORD_ForLoop_Start "for"
+#define ZINT_UNFILE__KEYWORD_ForLoop_End "forend"
+#define ZINT_UNFILE__KEYWORD_FunctionCall "call"
+
+static StringLineArr_t z_convertor_UnFile_BreakIntoFuntion(String_t s)
+{
+    const int ln_size_x = 128;
+    const int ln_size_y = 1024;
+
+    String_t tmp = z__copyString(s);
+
+    char * tok = strtok(tmp.str, " \n\t");
+    int fn_count = 0;
+
+    while(tok != NULL)
+    {
+        if (strcmp("fn", tok) == 0 )
+        {
+            
+        }
+    }
+
+}
+
+static int z_convertor(char const * filename)
+{
+    String_t z_unfile = z_ReadFromFile((char*)filename);
+
+
+    if (z_unfile.str == NULL)
+    {
+        dieOnCommand("Cannot Open zFile", ERROR_CODE__MISC__FILE_CANT_BE_OPENED, (char*)filename);
+    }
+
+
+
+     z__deleteString(&z_unfile);
+     return 0;
+}
+
+
+
+/********************************************/
+/*             Developer Toolkit            */
+/*            ------------------            */
+/*                   START                  */
+/*                  -------                 */
+/********************************************/
+#ifdef ZINT_DEV_TEST_ENABLED
 
 static void z__DEV_showallStack(void)
 {
@@ -768,13 +1136,43 @@ static void z__DEV_showallStack(void)
     }
 }
 
+static void z__DEV_show_FunctionCode(StringLineArr_t lns)
+{
+    printf("Funtions: %d\n", lns.used);
+    puts("Showing Code");
+
+    for (int i = 0; i < lns.used; ++i)
+    {
+        printf("\nFUNC ID: %d\n--\n\n", i);
+        for (int line = 0; line < lns.fn[i].y; ++line)
+        {
+            printf("%s;", lns.fn[i].lines[line]);
+        }
+    }
+
+}
+
 static void z__DEV_main(char *arg0, char *arg1)
 {
     z__DEV_showallStack();
 }
 
 #endif
+/********************************************/
+/*             Developer Toolkit            */
+/*            ------------------            */
+/*                   END                    */
+/*                  -----                   */
+/********************************************/
 
+
+
+/********************************************/
+/*             Argument Phraser             */
+/*            ------------------            */
+/*                   START                  */
+/*                  -------                 */
+/********************************************/
 int phrase(int argc, char *argv[])
 {
     for (int i = 0; i < argc; ++i)
@@ -788,20 +1186,25 @@ int phrase(int argc, char *argv[])
                 break;
 
                 case 'i':
-                z_Variable_pushVariableScope();
                     z_start(argv[i+1]);
                     
                 break;
 
 
-
-                #ifdef Z_DEV_TEST_ENABLED
+            /* Call DevToolkit */
+            /*------START------*/
+                
                 case 'D':
+                #ifdef ZINT_DEV_TEST_ENABLED
                     z__DEV_main(argv[i], argv[i+1]);
+                #else
+                    fputs("This Build Of Zint is not Made with Developer mode", stderr);
+                #endif
                 break;
                 
-
-                #endif
+                
+            /* Call DevToolkit */
+            /*-------END-------*/
 
                 default:
                 break;
@@ -811,13 +1214,28 @@ int phrase(int argc, char *argv[])
 
     return 0;
 }
+/********************************************/
+/*             Argument Phraser             */
+/*            ------------------            */
+/*                   END                    */
+/*                  -----                   */
+/********************************************/
+
 
 int main(int argc, char const *argv[])
 {
+    
     z_Variable_init();
+    
 
     phrase(argc, (char **)argv);
 
-    //z_start(argv[1]);
+
+
+    z_Variable_destroy();
+
+
+    printf("Memory Usage :=> %ldKB\n", zint_sys_getRamUsage()/1024);
+
     return 0;
 }
