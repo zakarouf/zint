@@ -51,11 +51,11 @@ python3 start.py
 
 This is on purpose as No. 1 is converted to No. 2 (They do the same thing).
 
-###### Reason?
+##### Reason?
 
-	The Zint interpretor executes the code shown in No. 2, and does not check for errors unless explicitly told to do so.
+The Zint interpretor executes the code shown in No. 2, and does not check for errors unless explicitly told to do so.
 
-	This makes the code execution a little tad faster by seperating the code execution and error catching process. A quality more akin to a compiler rather than a interpretor.
+This makes the code execution a little tad faster by seperating the code execution and error catching process. A quality more akin to a compiler rather than a interpretor.
 
 
 ## Run zint
