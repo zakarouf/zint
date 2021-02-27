@@ -8,25 +8,10 @@
 #include <string.h>
 
 #include "../common.h"
+
+#include "zint_config.h"
 #include "zint_defs.h"
 #include "zint_sys.h"
-
- //#define ZINT_DEBUG_ENABLED     /* Comment this line out if you dont want to do a debug build */
- //#define ZINT_DEV_TEST_ENABLED  /* Instialize Developer Test kit */
- //#define ZINT_DEBUG__SHOW_PUSH_AND_POP_VARS_ENABLED
- //#define ZINT_DEBUG__SHOW_PUSH_AND_POP_SCOPE_ENABLED
-
- //#define ZINT_DEBUG__LOGGER_ENABLED
- //#define ZINT_DEBUG__LOGGER_LOG_MEMORY
-
-
-
-/* Kill Switch if Anything goes wrong ( Usually Used For Debug Purpose ) */
-void dieOnCommand(char *msg, int CODE, char * codesnip)
-{
-    fprintf(stderr, "DIED:%d:%s\n\n>>> %s\n", CODE, msg, codesnip);
-    exit(1);
-}
 
 
 /* Basic Macro Functions */
@@ -1155,16 +1140,22 @@ int main(int argc, char const *argv[])
 {
     
     z_Variable_init();
-    
 
     phrase(argc, (char **)argv);
 
-
-
-    //z_Variable_destroy();
+    z_Variable_destroy();
+    
 
     #ifdef ZINT_DEBUG__LOGGER_LOG_MEMORY
+        #ifdef ZINT_SYS__COLORS_ENABLED
+            color256_set(100);
+        #endif
+
         printf("Memory Usage :=> %ldKB\n", zint_sys_getRamUsage()/1024);
+
+        #ifdef ZINT_SYS__COLORS_ENABLED
+            color_reset();
+        #endif
     #endif
     return 0;
 }
