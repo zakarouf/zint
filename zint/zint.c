@@ -7,45 +7,22 @@
 #include <math.h>
 #include <string.h>
 
+#include "../common.h"
 #include "zint_defs.h"
-#include "zint_string.h"
+#include "zint_sys.h"
 
  //#define ZINT_DEBUG_ENABLED     /* Comment this line out if you dont want to do a debug build */
  //#define ZINT_DEV_TEST_ENABLED  /* Instialize Developer Test kit */
  //#define ZINT_DEBUG__SHOW_PUSH_AND_POP_VARS_ENABLED
  //#define ZINT_DEBUG__SHOW_PUSH_AND_POP_SCOPE_ENABLED
 
-// #define ZINT_DEBUG__LOGGER_ENABLED
- #define ZINT_DEBUG__LOGGER_LOG_MEMORY
+ //#define ZINT_DEBUG__LOGGER_ENABLED
+ //#define ZINT_DEBUG__LOGGER_LOG_MEMORY
 
-enum ERROR_CODE
-{
-      ERROR_CODE__VARIABLE      = 0
-    , ERROR_CODE__DELETION__FAIL_VARUSED_REACHED_NEGETIVE_VALUE
-    , ERROR_CODE__DELETION__FAIL_VARSIZE_REACHED_NEGETIVE_VALUE
-    , ERROR_CODE__DELETION__FAIL_SCOPESIZE_REACHED_NEGETIVE_VALUE
 
-    , ERROR_CODE__SYNTAX        = 400
-
-    , ERROR_CODE__PREP_SYNTAX   = 800
-    , ERROR_CODE__PREP_SYNTAX_VARID_OVER_ACCESS_LIMIT
-
-    , ERROR_CODE__MISC          = 1000
-    , ERROR_CODE__MISC__FILE_CANT_BE_OPENED
-};
-
-#ifdef ZINT_DEBUG__LOGGER_LOG_MEMORY
-long zint_sys_getRamUsage(void)
-{
-    struct rusage usage;
-    int ret;
-    ret = getrusage(RUSAGE_SELF, &usage);
-    return usage.ru_maxrss;
-}
-#endif
 
 /* Kill Switch if Anything goes wrong ( Usually Used For Debug Purpose ) */
-static void dieOnCommand(char *msg, int CODE, char * codesnip)
+void dieOnCommand(char *msg, int CODE, char * codesnip)
 {
     fprintf(stderr, "DIED:%d:%s\n\n>>> %s\n", CODE, msg, codesnip);
     exit(1);
@@ -98,7 +75,7 @@ const char PROCESSED_SYMBS[] = {
      !3 (char *, int) => In-Build Input Function
 
 
-     !4 (char *, int) => IF Statement
+     !5 (char *, int) => IF Statement
         --Push IF Vars--
 
         --Get & Check IF--
@@ -117,7 +94,7 @@ const char PROCESSED_SYMBS[] = {
         --Pop IF Vars--
 
 
-     !5 (char *, int) => Goto Statement
+     !4 (char *, int) => Goto Statement
         --Goto a line of code and Execute from there 
             (NOTE: Goto Requires a Lable with :)
 
@@ -639,14 +616,15 @@ static void z_operator_asign(char * line, int line_width, const int VarPos)
 
 typedef struct keywordarg
 {
-    char *tok;
+    char *last;
     int *i;
 }__zint_karg_t;
 
 static void z_KeyWord_0_addvariable_to_scope(void *arg)
 {
-    char *tok = ((__zint_karg_t*)(arg))->tok;
-    tok = strtok(NULL, " \n\t");
+    char *tok;
+    char *last = ((__zint_karg_t*)(arg))->last;
+    tok = strtok_r(last, " \n\t",  &last);
 
     int VarCount = 1;
     if (z_isDigit__MF( tok[0] ))
@@ -662,8 +640,9 @@ static void z_KeyWord_0_addvariable_to_scope(void *arg)
 }
 static void z_KeyWord_1_delvariable_from_scope(void *arg)
 {
-    char *tok = ((__zint_karg_t*)(arg))->tok;
-    tok = strtok(NULL, " \n\t");
+    char *tok;
+    char *last = ((__zint_karg_t*)(arg))->last;
+    tok = strtok_r(last, " \n\t",  &last);
 
     int VarCount = 1;
     if (z_isDigit__MF( tok[0] ))
@@ -680,8 +659,10 @@ static void z_KeyWord_1_delvariable_from_scope(void *arg)
 
 static void z_KeyWord_2_inBuild_Print(void *arg)
 {
-    char *tok = ((__zint_karg_t*)(arg))->tok;
-    tok = strtok(NULL, "/");
+    char *tok;
+    char *last = ((__zint_karg_t*)(arg))->last;
+    tok = strtok_r(last, "/",  &last);
+
     static const char ESCAPE_CHAR[] =
     {
         '$','\n','\\','#','\t', '\b', '|'
@@ -707,15 +688,16 @@ static void z_KeyWord_2_inBuild_Print(void *arg)
             fputs(tok ,stdout);
         }
 
-        tok = strtok(NULL, "/");
+        tok = strtok_r(last, "/",  &last);
     }
 
 }
 
 static void z_KeyWord_3_inBuild_Input(void *arg)
 {
-    char *tok = ((__zint_karg_t*)(arg))->tok;
-    tok = strtok(NULL, " \n\t");
+    char *tok;
+    char *last = ((__zint_karg_t*)(arg))->last;
+    tok = strtok_r(last, " \n\t",  &last);
 
     char * t = &tok[1];
     int VarPos = atoi(t);
@@ -728,9 +710,9 @@ static void z_KeyWord_3_inBuild_Input(void *arg)
 static void z_KeyWord_4_GOTO(void *arg)
 {
     int *i = ((__zint_karg_t*)(arg))->i;
-    char *tok = ((__zint_karg_t*)(arg))->tok;
-
-    tok = strtok(NULL, " \n\t");
+    char *tok;
+    char *last = ((__zint_karg_t*)(arg))->last;
+    tok = strtok_r(last, " \n\t",  &last);
 
      //printf("GOTOPOS:%i s:%s", *i+atoi(tok), tok);
 
@@ -764,26 +746,27 @@ static const Operator_Compare_TF gOperator_Compare_F[] = {
 static void z_KeyWord_5_COMPARE(void *arg)
 {
     int *i = ((__zint_karg_t*)(arg))->i;
-    char *tok = ((__zint_karg_t*)(arg))->tok;
-    tok = strtok(NULL, " \n\t");
+    char *tok;
+    char *last = ((__zint_karg_t*)(arg))->last;
+    tok = strtok_r(last, " \n\t",  &last);
 
     int call = atoi(tok);
     double a = 0, b = 0;
 
     // !4 0 #1 #1 5
 
-    tok = strtok(NULL, " \n\t");
+    tok = strtok_r(last, " \n\t",  &last);
     if (*tok == '#')
     {
         tok++;
         a = atof(tok);
         a = z_Variable_accessVariable((int)a);
-    }
-    else
-    {
+    } else {
         a = atof(tok);
     }
-    tok = strtok(NULL, " \n\t");
+
+
+    tok = strtok_r(last, " \n\t",  &last);
     if (*tok == '#')
     {
         tok++;
@@ -798,7 +781,7 @@ static void z_KeyWord_5_COMPARE(void *arg)
     if (!gOperator_Compare_F[call](a, b))
     {
         
-        tok = strtok(NULL, " \n\t");
+        tok = strtok_r(last, " \n\t",  &last);
         *i += atoi(tok);
     }
 
@@ -808,9 +791,11 @@ static void z_funtion(void *arg, StringLines_t ln ,Var_t * returntype);
 static void z__DEV_showallStack(void);
 static void z_KeyWord_6_Function_Call(void *arg)
 {
-    char *tok = ((__zint_karg_t*)(arg))->tok;
+    char *tok;
 
-    tok = strtok(NULL, " \n\t");
+    char *last = ((__zint_karg_t*)(arg))->last;
+    tok = strtok_r(last, " \n\t",  &last);
+
     int call = atoi(tok);
 
     #ifdef ZINT_DEBUG_ENABLED
@@ -822,33 +807,17 @@ static void z_KeyWord_6_Function_Call(void *arg)
 
     #endif
 
+
+
     z_Variable_pushVariableScope();
 
-        tok = strtok(NULL, " \n\t");
-        const int size = 32;
-        Var_t argv[size];
-        for (int i = 0; i < size; ++i)
-        {
-            argv[i].value = malloc(sizeof(double));
-        }
-        int at = 0;
-
-        while(tok != NULL)
-        {
-            argv[at].value[0] = atof(tok);
-            at += 1;
-            tok = strtok(NULL, " \n\t");  
-        }
-        
 
         Var_t a;
         
-        z_funtion(argv, gFUNCTIONS.fn[call], &a);
 
-        for (int i = 0; i < size; ++i)
-        {
-            free(argv[i].value);
-        }
+        z_funtion(NULL, gFUNCTIONS.fn[call], &a);
+
+
 
     z_Variable_popVariableScope();
 
@@ -886,26 +855,30 @@ Keyword_t CALL_keywords[KEYWORD_MAX] = {
 
 };
 
-static void z_funtion(void *arg, StringLines_t ln ,Var_t * returntype)
+static void z_funtion(void *arg, const StringLines_t ln ,Var_t * returntype)
 {
-
     int id;
-    char **tmp_lines = ln.lines;
 
-    char * tok = strtok(tmp_lines[0], " \n\t");
+    char *tmp_line = malloc(sizeof(char) * ln.x);
+    char *tmp_line_main = malloc(sizeof(char) * ln.x);
+    memcpy(tmp_line_main, ln.lines[0], ln.x);
 
-    if (tok[0] != '@')
+    char * strtok_r__line = tmp_line_main;
+    char * token = strtok_r(strtok_r__line, " \n\t", &strtok_r__line);
+
+    if (token[0] != '@')
     {
 
-        dieOnCommand("NOT Pointed To Lable", ERROR_CODE__SYNTAX, *tmp_lines);
+        dieOnCommand("NOT Pointed To Lable", ERROR_CODE__SYNTAX, token);
     }
 
-    sscanf(&tmp_lines[0][1], "%d", &id);
+    sscanf(&tmp_line_main[1], "%d", &id);
 
-    tok = strtok(NULL, " \n\t");
+    token = strtok_r(strtok_r__line, " \n\t", &strtok_r__line);
 
     Var_t *v = arg;
-    int var_count = atof(tok);
+    int var_count = atof(token);
+
 
 
     for (int i = 0; i < var_count ; ++i)
@@ -918,26 +891,33 @@ static void z_funtion(void *arg, StringLines_t ln ,Var_t * returntype)
 
 
 
-    char *tmp_line = malloc(sizeof(char) * ln.x);
-    char *tmp_line_main = malloc(sizeof(char) * ln.x);
 
-    for (int i = 1;;++i)
+
+    int i = 0;
+    while (1)
     {
-        memcpy(tmp_line, tmp_lines[i], ln.x);
-        memcpy(tmp_line_main, tmp_lines[i], ln.x);
-        char * token = strtok(tmp_line_main, " \n\t");
+        GOTO_z_function_ENDWHILE:;
+        i++;
 
+        memcpy(tmp_line, ln.lines[i], ln.x);
+        memcpy(tmp_line_main, tmp_line, ln.x);
 
-        //printf("%s; <== %d:out: \n", tmp_line, i);
+        strtok_r__line = tmp_line_main;
+
+        
+        token = strtok_r(strtok_r__line, " \n\t", &strtok_r__line);
+        
 
         while (token != NULL)
         {
-          
+            
             if (*token == _ZINT__PreP_KEYWORD_SYMB )
             {
+
                 char KEY_num = z_charToInt__MF(token[1]);
 
-                CALL_keywords[(int)KEY_num](&(__zint_karg_t){token, &i});
+
+                CALL_keywords[(int)KEY_num](&(__zint_karg_t){strtok_r__line , &i});
                 goto GOTO_z_function_ENDWHILE;
             }
 
@@ -945,14 +925,13 @@ static void z_funtion(void *arg, StringLines_t ln ,Var_t * returntype)
             {
                 char * t = &token[1];
                 int VarPos = atoi(t);
-                token = strtok(NULL, " \n\t");
+                token = strtok_r(strtok_r__line, " \n\t", &strtok_r__line);
                 if (token[0] == '=')
                 {
-                    token = strtok(NULL, " \n\t");
+                    token = strtok_r(strtok_r__line, " \n\t", &strtok_r__line);
                     if (token != NULL)
                     {
                         z_operator_asign(tmp_line, ln.x, VarPos);
-                        //z_Variable_changeValue(VarPos, atof(token));
                     }
                     else
                     {
@@ -967,7 +946,7 @@ static void z_funtion(void *arg, StringLines_t ln ,Var_t * returntype)
                 if (token[1] == '@')
                 {
                     double val;
-                    token = strtok(NULL, " \n\t");
+                    token = strtok_r(strtok_r__line, " \n\t", &strtok_r__line);
                     if (token != NULL)
                     {
                         if (token[0] == '.' || z_isDigit__MF(token[0]))
@@ -978,7 +957,7 @@ static void z_funtion(void *arg, StringLines_t ln ,Var_t * returntype)
 
                     free(tmp_line);
                     free(tmp_line_main);
-                    *returntype = (Var_t){ &val, 1, 1 };
+                    *returntype = (Var_t){ NULL, 0, 0 };
                     return;
                 }
 
@@ -987,11 +966,10 @@ static void z_funtion(void *arg, StringLines_t ln ,Var_t * returntype)
 
             
 
-            token = strtok(NULL, " \n\t");
+            token = strtok_r(strtok_r__line, " \n\t", &strtok_r__line);
             
             
         }
-        GOTO_z_function_ENDWHILE:;
     }
 
 
@@ -1040,55 +1018,6 @@ static int z_start(char const  * filename)
 /*                   END                    */
 /*                  -----                   */
 /********************************************/
-
-
-#define ZINT_UNFILE__KEYWORD_FuntionStart "fn"
-#define ZINT_UNFILE__KEYWORD_FuntionEnd "fnend"
-#define ZINT_UNFILE__KEYWORD_VariableDeclare "let"
-#define ZINT_UNFILE__KEYWORD_If "if"
-#define ZINT_UNFILE__KEYWORD_Else_If "elif"
-#define ZINT_UNFILE__KEYWORD_Else "else"
-#define ZINT_UNFILE__KEYWORD_WhileLoop_Start "while"
-#define ZINT_UNFILE__KEYWORD_WhileLoop_End "wlend"
-#define ZINT_UNFILE__KEYWORD_ForLoop_Start "for"
-#define ZINT_UNFILE__KEYWORD_ForLoop_End "forend"
-#define ZINT_UNFILE__KEYWORD_FunctionCall "call"
-
-static StringLineArr_t z_convertor_UnFile_BreakIntoFuntion(String_t s)
-{
-    const int ln_size_x = 128;
-    const int ln_size_y = 1024;
-
-    String_t tmp = z__copyString(s);
-
-    char * tok = strtok(tmp.str, " \n\t");
-    int fn_count = 0;
-
-    while(tok != NULL)
-    {
-        if (strcmp("fn", tok) == 0 )
-        {
-            
-        }
-    }
-
-}
-
-static int z_convertor(char const * filename)
-{
-    String_t z_unfile = z_ReadFromFile((char*)filename);
-
-
-    if (z_unfile.str == NULL)
-    {
-        dieOnCommand("Cannot Open zFile", ERROR_CODE__MISC__FILE_CANT_BE_OPENED, (char*)filename);
-    }
-
-
-
-     z__deleteString(&z_unfile);
-     return 0;
-}
 
 
 
@@ -1232,10 +1161,10 @@ int main(int argc, char const *argv[])
 
 
 
-    z_Variable_destroy();
+    //z_Variable_destroy();
 
-
-    printf("Memory Usage :=> %ldKB\n", zint_sys_getRamUsage()/1024);
-
+    #ifdef ZINT_DEBUG__LOGGER_LOG_MEMORY
+        printf("Memory Usage :=> %ldKB\n", zint_sys_getRamUsage()/1024);
+    #endif
     return 0;
 }

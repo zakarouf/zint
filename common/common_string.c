@@ -1,4 +1,4 @@
-#include "zint_string.h"
+#include "common_string.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -51,7 +51,7 @@ static char **zse_malloc_2D_array_char (unsigned int x, unsigned int y) {
     char **arr = malloc(y * sizeof(char*));
     for (int i = 0; i < y; ++i)
     {
-        arr[i] = (char*)malloc(x * sizeof(char));
+        arr[i] = malloc(x * sizeof(char));
     }
 
     return arr;
